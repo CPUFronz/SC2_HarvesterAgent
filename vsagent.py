@@ -35,12 +35,13 @@ SCREEN = [0]
 
 
 class VerySimpleAgent(base_agent.BaseAgent):
-
-    """ As the name suggests, this class is a very simple pysc2-agent that collects resources.
+    """ A very simple scripted pysc2-agent that collects resources.
 
     This implementation uses absolute coordinates (more or less), thus it will only work when run on the map
     "CollectMineralsAndGas" from the mini game maps. It can be found here:
     https://github.com/deepmind/pysc2/releases/download/v1.2/mini_games.zip
+
+    It is based on the following tutorial: https://chatbotslife.com/building-a-basic-pysc2-agent-b109cde1477c
     """
 
     def __init__(self):
@@ -54,8 +55,8 @@ class VerySimpleAgent(base_agent.BaseAgent):
     def action(self, action_id, parameters):
         """Helper method to execute an action.
 
-        :params action_id: action to be executed
-        :params parameter: parameter(s) for that action
+        :param action_id: action to be executed
+        :param parameters: parameter(s) for that action
         """
         return actions.FunctionCall(action_id, parameters)
 
@@ -65,8 +66,8 @@ class VerySimpleAgent(base_agent.BaseAgent):
         This method performs all the actions the agent is capable of doing: selecting idle workers and send them to
         gather minerals or building a refinery to collect gas.
 
-        :params obs: the observation of the game state
-        :returns: the action the agent is going to execute
+        :param obs: the observation of the game state
+        :return: the action the agent is going to execute
         """
         super(VerySimpleAgent, self).step(obs)
         unit_type = obs.observation['screen'][UNIT_TYPE]

@@ -8,7 +8,7 @@ from pysc2.env import run_loop
 from pysc2.env import sc2_env
 from pysc2.lib import stopwatch
 
-from vsagent import VerySimpleAgent
+from ssagent import SlightlySmarterAgent
 
 PARALLEL_THREADS = 1
 
@@ -21,10 +21,10 @@ def run_thread():
                         screen_size_px=(84,84),
                         minimap_size_px=(64,64),
                         visualize=True) as env:
-        env = available_actions_printer.AvailableActionsPrinter(env)
-        agent = VerySimpleAgent()
+#        env = available_actions_printer.AvailableActionsPrinter(env)
+        agent = SlightlySmarterAgent()
 
-        run_loop.run_loop([agent], env, 2500)
+        run_loop.run_loop([agent], env)
 
 
 def main(argv):
