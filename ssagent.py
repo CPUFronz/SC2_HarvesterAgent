@@ -216,7 +216,6 @@ class SlightlySmarterAgent(base_agent.BaseAgent):
                 if vespine_y.any():
                     i = random.randint(0, len(vespine_y) - 1)
                     target = [vespine_x[i], vespine_y[i]]
-                    print('target verspine: ', vespine_x[i], vespine_y[i])
                     return self.action(BUILD_REFINERY, [SCREEN, target])
 
         elif smart_action == ACTION_SELECT_COMMAND_CENTER:

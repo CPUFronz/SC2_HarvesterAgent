@@ -8,21 +8,24 @@ from pysc2.env import run_loop
 from pysc2.env import sc2_env
 from pysc2.lib import stopwatch
 
-from ssagent import SlightlySmarterAgent
+from ddpg_agent import DDPGAgent
+from rand import RandomAgent
+from constants import SCREEN_SIZE_X, SCREEN_SIZE_Y, MINIMAP_SIZE_X, MINIMAP_SIZE_Y
 
 PARALLEL_THREADS = 1
 
 def run_thread():
     with sc2_env.SC2Env(map_name='CollectMineralsAndGas',
-                        agent_race='T',
+                        #map_name='Simple64',
+                        agent_race='Z',
                         difficulty=None,
-                        step_mul=8,
+                        step_mul=1,
                         game_steps_per_episode=0,
-                        screen_size_px=(84,84),
-                        minimap_size_px=(64,64),
+                        screen_size_px=(SCREEN_SIZE_X,SCREEN_SIZE_Y),
+                        minimap_size_px=(MINIMAP_SIZE_X,MINIMAP_SIZE_Y),
                         visualize=True) as env:
 #        env = available_actions_printer.AvailableActionsPrinter(env)
-        agent = SlightlySmarterAgent()
+        agent = DDPGAgent()
 
         run_loop.run_loop([agent], env)
 
