@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 
 import threading
+import time
+import tensorflow as tf
 from absl import app
 from pysc2 import maps
 from pysc2.env import available_actions_printer
@@ -8,34 +10,44 @@ from pysc2.env import run_loop
 from pysc2.env import sc2_env
 from pysc2.lib import stopwatch
 
-from ddpg_agent import DDPGAgent
+from a3c_agent import A3CAgent
 from rand import RandomAgent
 from constants import SCREEN_SIZE_X, SCREEN_SIZE_Y, MINIMAP_SIZE_X, MINIMAP_SIZE_Y
 
-PARALLEL_THREADS = 1
+PARALLEL_THREADS = 16
 
-def run_thread():
+
+def run_thread(agent):
     with sc2_env.SC2Env(map_name='CollectMineralsAndGas',
-                        #map_name='Simple64',
-                        agent_race='Z',
+                        agent_race='T',
                         difficulty=None,
-                        step_mul=1,
+                        step_mul=8,
                         game_steps_per_episode=0,
-                        screen_size_px=(SCREEN_SIZE_X,SCREEN_SIZE_Y),
-                        minimap_size_px=(MINIMAP_SIZE_X,MINIMAP_SIZE_Y),
-                        visualize=True) as env:
-#        env = available_actions_printer.AvailableActionsPrinter(env)
-        agent = DDPGAgent()
+                        screen_size_px=(SCREEN_SIZE_X, SCREEN_SIZE_Y),
+                        minimap_size_px=(MINIMAP_SIZE_X, MINIMAP_SIZE_Y),
+                        visualize=False) as env:
 
         run_loop.run_loop([agent], env)
 
 
 def main(argv):
+    session = tf.Session()
+
+    agents = []
+    for i in range(PARALLEL_THREADS):
+        agent = A3CAgent(session, i>0)
+        agents.append(agent)
+    agent.initialize()
+
     threads = []
-    for _ in range(PARALLEL_THREADS):
-        t = threading.Thread(target=run_thread)
+    for agent in agents:
+        t = threading.Thread(target=run_thread, args=(agent,))
         threads.append(t)
         t.start()
+        time.sleep(5)
+
+    for t in threads:
+        t.join()
 
 if __name__ == '__main__':
     print('Starting...')
