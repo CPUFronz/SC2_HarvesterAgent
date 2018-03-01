@@ -35,7 +35,6 @@ then
 else
   pip install tensorflow==1.5.0
 fi
-pip install tflearn==0.3.2
 pip install matplotlib==2.1.2
 
 if grep -q "export SC2PATH=" $INSTALL_DIR/venv/bin/activate
