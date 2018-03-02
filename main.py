@@ -9,7 +9,7 @@ from pysc2.env import run_loop
 from pysc2.env import sc2_env
 
 from a3c_agent import A3CAgent
-from constants import SCREEN_SIZE_X, SCREEN_SIZE_Y, MINIMAP_SIZE_X, MINIMAP_SIZE_Y, PARALLEL_THREADS, SAVE_PATH, LOG_PATH, SHOW
+from constants import SCREEN_SIZE_X, SCREEN_SIZE_Y, MINIMAP_SIZE_X, MINIMAP_SIZE_Y, PARALLEL_THREADS, SAVE_PATH, LOG_PATH, RENDER
 
 
 def run_thread(agent, display=False):
@@ -39,7 +39,7 @@ def main(argv):
         agent.initialize()
 
         threads = []
-        show = SHOW
+        show = RENDER
         for agent in agents:
             t = threading.Thread(target=run_thread, args=(agent, show))
             threads.append(t)

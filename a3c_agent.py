@@ -11,17 +11,14 @@ import tensorflow.contrib.layers as layers
 import numpy as np
 from xml.etree import ElementTree as ET
 from pysc2.lib import actions
-from constants import SCREEN_SIZE_X, SCREEN_SIZE_Y, MINIMAP_SIZE_X, MINIMAP_SIZE_Y, NON_SPATIAL_FEATURES, NUM_BATCHES, MAX_STEPS_TOTAL, EXPLORATION_RATE, DISCOUNT_FACTOR, LEARNING_RATE, SAVE_PATH, LOG_PATH, EPSILON
-
-NUM_ACTIONS = 15
-MINIMAP_FEATURES = 2
-SCREEN_FEATURES = 2
-NUM_FEATURES = SCREEN_SIZE_X * SCREEN_SIZE_Y * SCREEN_FEATURES + MINIMAP_SIZE_X * MINIMAP_SIZE_Y * MINIMAP_FEATURES + NON_SPATIAL_FEATURES + NUM_ACTIONS
+from constants import SCREEN_SIZE_X, SCREEN_SIZE_Y, MINIMAP_SIZE_X, MINIMAP_SIZE_Y, NUM_ACTIONS, MINIMAP_FEATURES\
+    , SCREEN_FEATURES, NON_SPATIAL_FEATURES, NUM_BATCHES, MAX_STEPS_TOTAL, EXPLORATION_RATE, DISCOUNT_FACTOR\
+    , LEARNING_RATE, SAVE_PATH, LOG_PATH, EPSILON, CHECKPOINT, SHOW_PROGRESS, DETAILED_LOGS
 
 class NeuralNetwork:
     def __init__(self, n_outputs=NUM_ACTIONS):
-        self.minimap = tf.placeholder(shape=(None, 2, MINIMAP_SIZE_X, MINIMAP_SIZE_Y), dtype=np.float32, name='minimap')
-        self.screen = tf.placeholder(shape=(None, 3, SCREEN_SIZE_X, SCREEN_SIZE_Y), dtype=np.float32, name='screen')
+        self.minimap = tf.placeholder(shape=(None, MINIMAP_FEATURES, MINIMAP_SIZE_X, MINIMAP_SIZE_Y), dtype=np.float32, name='minimap')
+        self.screen = tf.placeholder(shape=(None, SCREEN_FEATURES, SCREEN_SIZE_X, SCREEN_SIZE_Y), dtype=np.float32, name='screen')
         self.non_spatial_features =tf.placeholder(shape=(None, NON_SPATIAL_FEATURES), dtype=np.float32, name='non_spatial_features')
 
         minimap_conv1 = layers.conv2d(tf.transpose(self.minimap, [0, 2, 3, 1]), num_outputs=16, kernel_size=5, stride=1,scope='minimap_conv1')
@@ -41,7 +38,6 @@ class NeuralNetwork:
 class A3CAgent():
     step_counter = 0
     episode_counter = 0
-    collected_resources = []
     lock_step = threading.Lock()
     lock_episode = threading.Lock()
 
@@ -49,6 +45,7 @@ class A3CAgent():
         self.reward = 0
         self.episodes = 0
         self.steps = 0
+        self.episode_start = 0
 
         self.agent_id = agent_id
         reuse = self.agent_id > 0
@@ -118,29 +115,26 @@ class A3CAgent():
         self.action_spec = action_spec
 
     def reset(self):
-        self.episodes += 1
-        self.steps = 0
-
         if len(self.replay_states) > 0:
-            print('Episode finished, took: {:4.3f} seconds'.format(time.time() - self.episode_start))
-            self.episode_start = time.time()
-            # TODO:  warning for first episode
-
+            self.episodes += 1
+            self.steps = 0
             with A3CAgent.lock_episode:
                 A3CAgent.episode_counter += 1
+                global_episode = A3CAgent.episode_counter
+                global_steps = A3CAgent.step_counter
 
-            self.write_action_log(A3CAgent.episode_counter)
-
-            info = self.replay_states[-1][2]
-            collected_minerals = info.flatten()[8]
-            collected_gas = info.flatten()[9]
-            A3CAgent.collected_resources.append((collected_minerals, collected_gas))
+            self.write_action_log(global_episode)
 
             learning_rate = LEARNING_RATE * (1 - 0.9 * A3CAgent.step_counter / MAX_STEPS_TOTAL)
             self.update(learning_rate)
 
-        
-        # TODO: make output of time measurements optional
+            if SHOW_PROGRESS:
+                print('Episode {0:d} finished, took: {1:4.3f} seconds'.format(global_episode, time.time() - self.episode_start))
+            self.episode_start = time.time()
+
+            if global_episode % CHECKPOINT == 0:
+                print('Episode: {0:d}, step {1:d}/{2:d}, saving model...'.format(global_episode, global_steps, MAX_STEPS_TOTAL))
+                self.save_checkpoint(global_steps, global_episode)
         else:
             self.episode_start = time.time()
 
@@ -199,11 +193,6 @@ class A3CAgent():
 
         with A3CAgent.lock_step:
             A3CAgent.step_counter += 1
-
-# TODO: doesn't really make much sense here, belongs to self.reset()
-        if A3CAgent.step_counter % 10000 == 0:
-            print('Step {0:d}/{1:d}, saving model...'.format(A3CAgent.step_counter, MAX_STEPS_TOTAL))
-            self.save_checkpoint()
 
         return actions.FunctionCall(action_id, arguments)
 
@@ -321,12 +310,12 @@ class A3CAgent():
                      self.nn.non_spatial_features: non_spatial_features}
         return feed_dict
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, global_steps, global_episodes):
         if not os.path.exists(SAVE_PATH):
             os.mkdir(SAVE_PATH)
 
         with open(SAVE_PATH + 'python_vars.pickle', 'wb') as f:
-            pickle.dump((A3CAgent.step_counter, A3CAgent.episode_counter, A3CAgent.collected_resources), f)
+            pickle.dump((global_steps, global_episodes), f)
         self.saver.save(self.tf_session, SAVE_PATH + 'SC2_A3C_harvester.ckpt')
 
     def load_checkpoint(self):
@@ -337,37 +326,94 @@ class A3CAgent():
             python_vars = pickle.load(f)
             A3CAgent.step_counter = python_vars[0]
             A3CAgent.episode_counter = python_vars[1]
-            A3CAgent.collected_resources = python_vars[2]
 
-        ckpt = tf.train.get_checkpoint_state(SAVE_PATH)
-        self.saver.restore(self.tf_session, ckpt.model_checkpoint_path)
+        checkpoint = tf.train.get_checkpoint_state(SAVE_PATH)
+        self.saver.restore(self.tf_session, checkpoint.model_checkpoint_path)
 
     def write_action_log(self, num_episode):
-        #TODO: only save the best 10 (or constant) runs
-
         filename = LOG_PATH + 'agent{:02d}.xml'.format(self.agent_id)
         if not os.path.exists(filename):
             root = ET.Element('action_logs')
             tree = ET.ElementTree(root)
             tree.write(filename)
 
+        total_collected_minerals = int(self.replay_states[-1][2].flatten()[8])
+        total_collected_gas = int(self.replay_states[-1][2].flatten()[9])
+
         tree = ET.parse(filename)
+
+        top_minerals = [(self.episodes, total_collected_minerals)]
+        top_gas = [(self.episodes , total_collected_gas)]
+        for t in tree.findall('episode'):
+
+            value = t.attrib['total_collected_minerals']
+            episode = t.attrib['num_agent']
+            top_minerals.append((episode, value))
+
+            value = t.attrib['total_collected_gas']
+            episode = t.attrib['num_agent']
+            top_gas.append((episode, value))
+
+        # keep detailed logs only for the 5 best results for minerals and gas
+        # add all episodes to the list, sort them and prune the list
+        top_minerals.sort(key=lambda tup: int(tup[1]))
+        top_gas.sort(key=lambda tup: int(tup[1]))
+        top_minerals = top_minerals[:DETAILED_LOGS + 1]
+        top_gas = top_gas[:DETAILED_LOGS + 1]
+        top_episodes = [i[0] for i in top_minerals + top_gas]
+
+        if len(top_minerals) > DETAILED_LOGS:
+            removed_entry_minerals = top_minerals.pop(-1)[0]
+            removed_entry_minerals = tree.find('.//episode[@num_agent="{:s}"]'.format(removed_entry_minerals))
+            for r in removed_entry_minerals.findall('action'):
+                removed_entry_minerals.remove(r)
+
+        if len(top_gas) > DETAILED_LOGS:
+            removed_entry_gas = top_gas.pop(-1)[0]
+            removed_entry_gas = tree.find('.//episode[@num_agent="{:s}"]'.format(removed_entry_gas))
+            for r in removed_entry_gas.findall('action'):
+                removed_entry_gas.remove(r)
+
         log_entry = ET.SubElement(tree.getroot(), 'episode')
-        log_entry.attrib['num'] = str(num_episode)
+        log_entry.attrib['num_global'] = str(num_episode)
+        log_entry.attrib['num_agent'] = str(self.episodes)
+        log_entry.attrib['total_collected_minerals'] = str(total_collected_minerals)
+        log_entry.attrib['total_collected_gas'] = str(total_collected_gas)
 
-        for i, action in enumerate(self.replay_actions):
-            performed_action = ET.SubElement(log_entry, 'action')
-            performed_action.attrib['name'] = actions.FUNCTIONS[action[0]].name
-            performed_action.attrib['x'] = str(action[1][0])
-            performed_action.attrib['y'] = str(action[1][1])
-            performed_action.attrib['random_action'] = str(action[3])
-            performed_action.attrib['random_position'] = str(action[4])
+        if self.episodes in top_episodes:
+            for i, action in enumerate(self.replay_actions):
+                performed_action = ET.SubElement(log_entry, 'action')
+                performed_action.attrib['name'] = actions.FUNCTIONS[action[0]].name
+                performed_action.attrib['x'] = str(action[1][0])
+                performed_action.attrib['y'] = str(action[1][1])
+                performed_action.attrib['random_action'] = str(action[3])
+                performed_action.attrib['random_position'] = str(action[4])
 
-            info = self.replay_states[i][2]
-            collected_minerals = info.flatten()[8]
-            collected_gas = info.flatten()[9]
+                collected_minerals = self.replay_states[i][2].flatten()[8]
+                collected_gas = self.replay_states[i][2].flatten()[9]
 
-            performed_action.attrib['collected_minerals'] = str(collected_minerals)
-            performed_action.attrib['collected_gas'] = str(collected_gas)
+                performed_action.attrib['collected_minerals'] = str(int(collected_minerals))
+                performed_action.attrib['collected_gas'] = str(int(collected_gas))
 
         tree.write(filename)
+
+# training error from actor and critic
+
+# report: detailed description of what the program is doing, how it's working, architecture, technical side, results
+# inspect update of weights
+# record average error of each episode (from the gradients)
+# reward function over time, and score
+# output of actions
+# different map
+
+# TODO:
+# * differenz zu Resourcen in Reward
+# * XML mit status synchen (XML in Klasse?), pickle verwerfen
+# * XML pretty print
+# * bessere Fortschrittsindikatoren
+# * main aufräumen
+# * check für Größe Screen und Minimap Größe einbauen (continue)
+# * RUN Funktion (!!!)
+
+# Warnung bezueglich 4GB GPU
+# Unterschied zwischen Episoden Nummern erklären
