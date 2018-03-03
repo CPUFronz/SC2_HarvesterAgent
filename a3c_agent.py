@@ -9,14 +9,19 @@ import threading
 import tensorflow as tf
 import tensorflow.contrib.layers as layers
 import numpy as np
+from xml.dom import minidom
 from xml.etree import ElementTree as ET
 from pysc2.lib import actions
 from constants import SCREEN_SIZE_X, SCREEN_SIZE_Y, MINIMAP_SIZE_X, MINIMAP_SIZE_Y, NUM_ACTIONS, MINIMAP_FEATURES\
     , SCREEN_FEATURES, NON_SPATIAL_FEATURES, NUM_BATCHES, MAX_STEPS_TOTAL, EXPLORATION_RATE, DISCOUNT_FACTOR\
     , LEARNING_RATE, SAVE_PATH, LOG_PATH, EPSILON, CHECKPOINT, SHOW_PROGRESS, DETAILED_LOGS
 
+
 class NeuralNetwork:
     def __init__(self, n_outputs=NUM_ACTIONS):
+        assert MINIMAP_SIZE_X == SCREEN_SIZE_X, 'resolution of minimap and screen have to be the same (X-axis)'
+        assert MINIMAP_SIZE_Y == SCREEN_SIZE_Y, 'resolution of minimap and screen have to be the same (Y-axis)'
+
         self.minimap = tf.placeholder(shape=(None, MINIMAP_FEATURES, MINIMAP_SIZE_X, MINIMAP_SIZE_Y), dtype=np.float32, name='minimap')
         self.screen = tf.placeholder(shape=(None, SCREEN_FEATURES, SCREEN_SIZE_X, SCREEN_SIZE_Y), dtype=np.float32, name='screen')
         self.non_spatial_features =tf.placeholder(shape=(None, NON_SPATIAL_FEATURES), dtype=np.float32, name='non_spatial_features')
@@ -38,6 +43,7 @@ class NeuralNetwork:
 class A3CAgent():
     step_counter = 0
     episode_counter = 0
+    action_logs = {}
     lock_step = threading.Lock()
     lock_episode = threading.Lock()
 
@@ -48,6 +54,7 @@ class A3CAgent():
         self.episode_start = 0
 
         self.agent_id = agent_id
+        A3CAgent.action_logs[self.agent_id] = None
         reuse = self.agent_id > 0
 
         self.epsilon = EPSILON
@@ -86,13 +93,13 @@ class A3CAgent():
 
             action_log_prob = tf.add(tf.multiply(self.valid_spatial_action, spatial_action_log_prob), non_spatial_action_log_prob)
             advantage = tf.stop_gradient(tf.subtract(self.R, self.nn.value))
-            policy_loss = -tf.reduce_mean(tf.multiply(action_log_prob, advantage))
-            value_loss = -tf.reduce_mean(tf.multiply(self.nn.value, advantage))
+            self.policy_loss = -tf.reduce_mean(tf.multiply(action_log_prob, advantage))
+            self.value_loss = -tf.reduce_mean(tf.multiply(self.nn.value, advantage))
 
-            loss = tf.add(policy_loss, value_loss)
+            loss = tf.add(self.policy_loss, self.value_loss)
 
-            self.summary.append(tf.summary.scalar('policy_loss', policy_loss))
-            self.summary.append(tf.summary.scalar('value_loss', value_loss))
+            self.summary.append(tf.summary.scalar('policy_loss', self.policy_loss))
+            self.summary.append(tf.summary.scalar('value_loss', self.value_loss))
 
             self.learning_rate = tf.placeholder(tf.float32, None, name='learning_rate')
             optimizer = tf.train.RMSPropOptimizer(self.learning_rate, decay=0.99, epsilon=1e-10)
@@ -123,10 +130,12 @@ class A3CAgent():
                 global_episode = A3CAgent.episode_counter
                 global_steps = A3CAgent.step_counter
 
-            self.write_action_log(global_episode)
-
             learning_rate = LEARNING_RATE * (1 - 0.9 * A3CAgent.step_counter / MAX_STEPS_TOTAL)
-            self.update(learning_rate)
+            reward, policy_loss, value_loss = self.update(learning_rate)
+
+            self.save_action_log(global_episode, reward, policy_loss, value_loss)
+            self.replay_states = []
+            self.replay_actions = []
 
             if SHOW_PROGRESS:
                 print('Episode {0:d} finished, took: {1:4.3f} seconds'.format(global_episode, time.time() - self.episode_start))
@@ -248,6 +257,8 @@ class A3CAgent():
                     index = action_target[1] * SCREEN_SIZE_Y + action_target[0]
                     spatial_action_selected[i, index] = 1
 
+        total_reward = cumulated_rewards[-1]
+
         minimap = np.array(minimap).squeeze()
         screen = np.array(screen).squeeze()
         non_spatial_features = np.array(non_spatial_features).squeeze()
@@ -265,6 +276,8 @@ class A3CAgent():
 
         run_options = tf.RunOptions(report_tensor_allocations_upon_oom=True)
 
+        losses = np.array([], dtype=np.float32).reshape(0,2)
+
         for i in range(len(minimap)):
             feed_dict = {self.nn.minimap: minimap[i],
                          self.nn.screen: screen[i],
@@ -275,11 +288,17 @@ class A3CAgent():
                          self.valid_non_spatial_action: valid_non_spatial_action[i],
                          self.non_spatial_action_selected: non_spatial_action_selected[i],
                          self.learning_rate: learning_rate}
-            _, summary = self.tf_session.run([self.train, self.summary_op], feed_dict=feed_dict, options=run_options)
+            _, summary, policy_loss, value_loss = self.tf_session.run([self.train, self.summary_op, self.policy_loss, self.value_loss], feed_dict=feed_dict, options=run_options)
             self.summary_writer.add_summary(summary, A3CAgent.step_counter)
 
-        self.replay_states = []
-        self.replay_actions = []
+            losses = np.vstack((losses, (policy_loss, value_loss)))
+
+        # reverse it again, so it is in the original order, both lists are used later on
+        self.replay_states.reverse()
+        self.replay_actions.reverse()
+
+        avg_losses = losses.mean(axis=0)
+        return total_reward, avg_losses[0], avg_losses[1]
 
     def create_feed_dict(self, observation):
         minimap = np.array(observation['minimap'], dtype=np.float32)
@@ -311,12 +330,20 @@ class A3CAgent():
         return feed_dict
 
     def save_checkpoint(self, global_steps, global_episodes):
+        action_logs = A3CAgent.action_logs
+
         if not os.path.exists(SAVE_PATH):
             os.mkdir(SAVE_PATH)
 
         with open(SAVE_PATH + 'python_vars.pickle', 'wb') as f:
-            pickle.dump((global_steps, global_episodes), f)
+            pickle.dump((global_steps, global_episodes, SCREEN_SIZE_Y, SCREEN_SIZE_X), f)
         self.saver.save(self.tf_session, SAVE_PATH + 'SC2_A3C_harvester.ckpt')
+
+        for k, v in action_logs.items():
+            filename = LOG_PATH + 'agent{:02d}.xml'.format(k)
+            with open(filename, 'w') as f:
+                reparsed = minidom.parseString(ET.tostring(v.getroot()))
+                reparsed.writexml(f, addindent='  ')
 
     def load_checkpoint(self):
         if not os.path.exists(SAVE_PATH):
@@ -326,59 +353,68 @@ class A3CAgent():
             python_vars = pickle.load(f)
             A3CAgent.step_counter = python_vars[0]
             A3CAgent.episode_counter = python_vars[1]
+            screen_x = python_vars[2]
+            screen_y = python_vars[3]
+
+            assert screen_x == SCREEN_SIZE_X, 'Agent was trained for a different resolution (X-axis)'
+            assert screen_y == SCREEN_SIZE_Y, 'Agent was trained for a different resolution (Y-axis)'
+
+        A3CAgent.action_logs[self.agent_id] = ET.parse(LOG_PATH + 'agent{:02d}.xml'.format(self.agent_id))
 
         checkpoint = tf.train.get_checkpoint_state(SAVE_PATH)
         self.saver.restore(self.tf_session, checkpoint.model_checkpoint_path)
 
-    def write_action_log(self, num_episode):
-        filename = LOG_PATH + 'agent{:02d}.xml'.format(self.agent_id)
-        if not os.path.exists(filename):
+    def save_action_log(self, num_episode, reward, policy_loss, value_loss):
+        if not A3CAgent.action_logs[self.agent_id]:
             root = ET.Element('action_logs')
             tree = ET.ElementTree(root)
-            tree.write(filename)
+        else:
+            tree = A3CAgent.action_logs[self.agent_id]
 
         total_collected_minerals = int(self.replay_states[-1][2].flatten()[8])
         total_collected_gas = int(self.replay_states[-1][2].flatten()[9])
 
-        tree = ET.parse(filename)
-
-        top_minerals = [(self.episodes, total_collected_minerals)]
-        top_gas = [(self.episodes , total_collected_gas)]
+        minerals_per_episode = [(self.episodes, total_collected_minerals)]
+        gas_per_episode = [(self.episodes , total_collected_gas)]
         for t in tree.findall('episode'):
+            value = int(t.attrib['total_collected_minerals'])
+            episode = int(t.attrib['num_agent'])
+            minerals_per_episode.append((episode, value))
 
-            value = t.attrib['total_collected_minerals']
-            episode = t.attrib['num_agent']
-            top_minerals.append((episode, value))
-
-            value = t.attrib['total_collected_gas']
-            episode = t.attrib['num_agent']
-            top_gas.append((episode, value))
+            value = int(t.attrib['total_collected_gas'])
+            episode = int(t.attrib['num_agent'])
+            gas_per_episode.append((episode, value))
 
         # keep detailed logs only for the 5 best results for minerals and gas
         # add all episodes to the list, sort them and prune the list
-        top_minerals.sort(key=lambda tup: int(tup[1]))
-        top_gas.sort(key=lambda tup: int(tup[1]))
-        top_minerals = top_minerals[:DETAILED_LOGS + 1]
-        top_gas = top_gas[:DETAILED_LOGS + 1]
-        top_episodes = [i[0] for i in top_minerals + top_gas]
+        minerals_per_episode.sort(key=lambda tup: tup[1], reverse=True)
+        gas_per_episode.sort(key=lambda tup: tup[1], reverse=True)
+        top_episodes = set([i[0] for i in minerals_per_episode[:DETAILED_LOGS] + gas_per_episode[:DETAILED_LOGS]])
+        other_episodes = set([i[0] for i in minerals_per_episode + gas_per_episode]) - top_episodes
 
+        """
         if len(top_minerals) > DETAILED_LOGS:
-            removed_entry_minerals = top_minerals.pop(-1)[0]
-            removed_entry_minerals = tree.find('.//episode[@num_agent="{:s}"]'.format(removed_entry_minerals))
+            removed_entry_minerals = int(top_minerals.pop(-1)[0])
+            removed_entry_minerals = tree.find('.//episode[@num_agent="{:d}"]'.format(removed_entry_minerals))
+            print(removed_entry_minerals)
             for r in removed_entry_minerals.findall('action'):
                 removed_entry_minerals.remove(r)
 
         if len(top_gas) > DETAILED_LOGS:
-            removed_entry_gas = top_gas.pop(-1)[0]
-            removed_entry_gas = tree.find('.//episode[@num_agent="{:s}"]'.format(removed_entry_gas))
+            removed_entry_gas = int(top_gas.pop(-1)[0])
+            removed_entry_gas = tree.find('.//episode[@num_agent="{:d}"]'.format(removed_entry_gas))
             for r in removed_entry_gas.findall('action'):
                 removed_entry_gas.remove(r)
+        """
 
         log_entry = ET.SubElement(tree.getroot(), 'episode')
         log_entry.attrib['num_global'] = str(num_episode)
         log_entry.attrib['num_agent'] = str(self.episodes)
         log_entry.attrib['total_collected_minerals'] = str(total_collected_minerals)
         log_entry.attrib['total_collected_gas'] = str(total_collected_gas)
+        log_entry.attrib['loss_actor'] = str(policy_loss)
+        log_entry.attrib['loss_critic'] = str(value_loss)
+        log_entry.attrib['reward'] = str(reward)
 
         if self.episodes in top_episodes:
             for i, action in enumerate(self.replay_actions):
@@ -395,25 +431,9 @@ class A3CAgent():
                 performed_action.attrib['collected_minerals'] = str(int(collected_minerals))
                 performed_action.attrib['collected_gas'] = str(int(collected_gas))
 
-        tree.write(filename)
+        for e in other_episodes:
+            remove_entry = tree.find('.//episode[@num_agent="{:d}"]'.format(e))
+            for r in remove_entry.findall('action'):
+                remove_entry.remove(r)
 
-# training error from actor and critic
-
-# report: detailed description of what the program is doing, how it's working, architecture, technical side, results
-# inspect update of weights
-# record average error of each episode (from the gradients)
-# reward function over time, and score
-# output of actions
-# different map
-
-# TODO:
-# * differenz zu Resourcen in Reward
-# * XML mit status synchen (XML in Klasse?), pickle verwerfen
-# * XML pretty print
-# * bessere Fortschrittsindikatoren
-# * main aufräumen
-# * check für Größe Screen und Minimap Größe einbauen (continue)
-# * RUN Funktion (!!!)
-
-# Warnung bezueglich 4GB GPU
-# Unterschied zwischen Episoden Nummern erklären
+        A3CAgent.action_logs[self.agent_id] = tree

@@ -14,7 +14,7 @@ LEARNING_RATE = 10e-3
 EPSILON = 0.05
 
 NUM_BATCHES = 20
-PARALLEL_THREADS = 8
+PARALLEL_THREADS = 16
 MAX_STEPS_TOTAL = 600 * 10**6 # TODO: check if it really exits (e.g. after 100 steps)
 CHECKPOINT = 100
 SAVE_PATH = './saved_checkpoints/'
