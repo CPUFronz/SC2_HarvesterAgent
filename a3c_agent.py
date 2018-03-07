@@ -322,6 +322,7 @@ class A3CAgent():
             observation['score_cumulative'][9],
             observation['score_cumulative'][10]
         ], dtype=np.float32)
+        non_spatial_features = np.append(non_spatial_features, [1 if i in observation['available_actions'] else 0 for i in self.executable_actions])
         non_spatial_features = np.expand_dims(non_spatial_features, axis=0)
 
         feed_dict = {self.nn.minimap: minimap,
@@ -391,8 +392,8 @@ class A3CAgent():
         # add all episodes to the list, sort them and prune the list
         minerals_per_episode.sort(key=lambda tup: tup[1], reverse=True)
         gas_per_episode.sort(key=lambda tup: tup[1], reverse=True)
-        top_episodes = set([i[0] for i in minerals_per_episode[:DETAILED_LOGS] + gas_per_episode[:DETAILED_LOGS]])
-        other_episodes = set([i[0] for i in minerals_per_episode + gas_per_episode]) - top_episodes
+        kept_episodes = set([i[0] for i in minerals_per_episode[:DETAILED_LOGS] + gas_per_episode[:DETAILED_LOGS] + [j for j in range(episode - DETAILED_LOGS, episode)]])
+        other_episodes = set([i[0] for i in minerals_per_episode + gas_per_episode]) - kept_episodes
 
         log_entry = ET.SubElement(tree.getroot(), 'episode')
         log_entry.attrib['num_global'] = str(num_episode)
@@ -403,7 +404,7 @@ class A3CAgent():
         log_entry.attrib['loss_critic'] = str(value_loss)
         log_entry.attrib['reward'] = str(reward)
 
-        if self.episodes in top_episodes:
+        if self.episodes in kept_episodes:
             for i, action in enumerate(self.replay_actions):
                 performed_action = ET.SubElement(log_entry, 'action')
                 performed_action.attrib['name'] = actions.FUNCTIONS[action[0]].name
@@ -424,4 +425,22 @@ class A3CAgent():
                 remove_entry.remove(r)
 
         A3CAgent.action_logs[self.agent_id] = tree
-        
+
+# training error from actor and critic
+
+# report: detailed description of what the program is doing, how it's working, architecture, technical side, results
+# inspect update of weights
+# record average error of each episode (from the gradients)
+# reward function over time, and score
+# output of actions
+# different map
+
+# TODO:
+# * main aufräumen und für andere Agenten vorbereiten
+# * RUN Funktion (!!!)
+# * Episodennummer laden, prune XMLs
+#mehr episoden, available actions as input
+
+# Warnung bezueglich 4GB GPU
+# Unterschied zwischen Episoden Nummern erklären
+# Grund warum Episoden mit Mineralen nicht dabei sind, aber neuere Episoden mit 0,0: Gas
