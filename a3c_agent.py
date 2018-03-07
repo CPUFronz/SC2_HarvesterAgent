@@ -343,7 +343,7 @@ class A3CAgent():
             filename = LOG_PATH + 'agent{:02d}.xml'.format(k)
             with open(filename, 'w') as f:
                 reparsed = minidom.parseString(ET.tostring(v.getroot()))
-                reparsed.writexml(f, addindent='  ')
+                reparsed.writexml(f, addindent='  ', newl='\n')
 
     def load_checkpoint(self):
         if not os.path.exists(SAVE_PATH):
@@ -360,6 +360,8 @@ class A3CAgent():
             assert screen_y == SCREEN_SIZE_Y, 'Agent was trained for a different resolution (Y-axis)'
 
         A3CAgent.action_logs[self.agent_id] = ET.parse(LOG_PATH + 'agent{:02d}.xml'.format(self.agent_id))
+        root = A3CAgent.action_logs[self.agent_id].getroot()
+        self.episodes = int(root.getchildren()[-1].attrib['num_agent'])
 
         checkpoint = tf.train.get_checkpoint_state(SAVE_PATH)
         self.saver.restore(self.tf_session, checkpoint.model_checkpoint_path)
@@ -392,21 +394,6 @@ class A3CAgent():
         top_episodes = set([i[0] for i in minerals_per_episode[:DETAILED_LOGS] + gas_per_episode[:DETAILED_LOGS]])
         other_episodes = set([i[0] for i in minerals_per_episode + gas_per_episode]) - top_episodes
 
-        """
-        if len(top_minerals) > DETAILED_LOGS:
-            removed_entry_minerals = int(top_minerals.pop(-1)[0])
-            removed_entry_minerals = tree.find('.//episode[@num_agent="{:d}"]'.format(removed_entry_minerals))
-            print(removed_entry_minerals)
-            for r in removed_entry_minerals.findall('action'):
-                removed_entry_minerals.remove(r)
-
-        if len(top_gas) > DETAILED_LOGS:
-            removed_entry_gas = int(top_gas.pop(-1)[0])
-            removed_entry_gas = tree.find('.//episode[@num_agent="{:d}"]'.format(removed_entry_gas))
-            for r in removed_entry_gas.findall('action'):
-                removed_entry_gas.remove(r)
-        """
-
         log_entry = ET.SubElement(tree.getroot(), 'episode')
         log_entry.attrib['num_global'] = str(num_episode)
         log_entry.attrib['num_agent'] = str(self.episodes)
@@ -437,3 +424,4 @@ class A3CAgent():
                 remove_entry.remove(r)
 
         A3CAgent.action_logs[self.agent_id] = tree
+        
