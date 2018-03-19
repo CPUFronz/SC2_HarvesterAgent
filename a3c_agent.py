@@ -12,18 +12,41 @@ import numpy as np
 from xml.dom import minidom
 from xml.etree import ElementTree as ET
 from pysc2.lib import actions
-from constants import SCREEN_SIZE_X, SCREEN_SIZE_Y, MINIMAP_SIZE_X, MINIMAP_SIZE_Y, NUM_ACTIONS, MINIMAP_FEATURES\
-    , SCREEN_FEATURES, NON_SPATIAL_FEATURES, NUM_BATCHES, MAX_STEPS_TOTAL, EXPLORATION_RATE, DISCOUNT_FACTOR\
-    , LEARNING_RATE, SAVE_PATH, LOG_PATH, EPSILON, CHECKPOINT, SHOW_PROGRESS, DETAILED_LOGS
+
+A3C_SCREEN_SIZE_X = 32
+A3C_SCREEN_SIZE_Y = 32
+A3C_MINIMAP_SIZE_X = A3C_SCREEN_SIZE_X
+A3C_MINIMAP_SIZE_Y = A3C_SCREEN_SIZE_Y
+NUM_ACTIONS = 15
+NON_SPATIAL_FEATURES = 6 + 6 + NUM_ACTIONS
+MINIMAP_FEATURES = 2
+SCREEN_FEATURES = 3
+
+TRAINING = True
+DISCOUNT_FACTOR = 0.99
+EXPLORATION_RATE = 0.4
+LEARNING_RATE = 10e-3
+EPSILON = 0.05
+
+NUM_BATCHES = 20
+PARALLEL_THREADS = 16
+MAX_STEPS_TOTAL = 600 * 10**6
+CHECKPOINT = 500
+SAVE_PATH = './saved_checkpoints/'
+LOG_PATH = './logs/'
+PLOT_PATH = './plots/'
+DETAILED_LOGS = 10 # detailed logs are kept for top 10 episodes for minerals and gas, as well as for the last 10 episodes
+RENDER = False
+SHOW_PROGRESS = True
 
 
 class NeuralNetwork:
     def __init__(self, n_outputs=NUM_ACTIONS):
-        assert MINIMAP_SIZE_X == SCREEN_SIZE_X, 'resolution of minimap and screen have to be the same (X-axis)'
-        assert MINIMAP_SIZE_Y == SCREEN_SIZE_Y, 'resolution of minimap and screen have to be the same (Y-axis)'
+        assert A3C_MINIMAP_SIZE_X == A3C_SCREEN_SIZE_X, 'resolution of minimap and screen have to be the same (X-axis)'
+        assert A3C_MINIMAP_SIZE_Y == A3C_SCREEN_SIZE_Y, 'resolution of minimap and screen have to be the same (Y-axis)'
 
-        self.minimap = tf.placeholder(shape=(None, MINIMAP_FEATURES, MINIMAP_SIZE_X, MINIMAP_SIZE_Y), dtype=np.float32, name='minimap')
-        self.screen = tf.placeholder(shape=(None, SCREEN_FEATURES, SCREEN_SIZE_X, SCREEN_SIZE_Y), dtype=np.float32, name='screen')
+        self.minimap = tf.placeholder(shape=(None, MINIMAP_FEATURES, A3C_MINIMAP_SIZE_X, A3C_MINIMAP_SIZE_Y), dtype=np.float32, name='minimap')
+        self.screen = tf.placeholder(shape=(None, SCREEN_FEATURES, A3C_SCREEN_SIZE_X, A3C_SCREEN_SIZE_Y), dtype=np.float32, name='screen')
         self.non_spatial_features =tf.placeholder(shape=(None, NON_SPATIAL_FEATURES), dtype=np.float32, name='non_spatial_features')
 
         minimap_conv1 = layers.conv2d(tf.transpose(self.minimap, [0, 2, 3, 1]), num_outputs=16, kernel_size=5, stride=1,scope='minimap_conv1')
@@ -75,7 +98,7 @@ class A3CAgent():
 
             self.valid_spatial_action = tf.placeholder(tf.float32, [None, ], name='valid_spatial_action')
             self.valid_non_spatial_action = tf.placeholder(tf.float32, [None, NUM_ACTIONS], name='valid_non_spatial_action')
-            self.spatial_action_selected = tf.placeholder(tf.float32, [None, SCREEN_SIZE_X * SCREEN_SIZE_Y], name='spatial_action_selected')
+            self.spatial_action_selected = tf.placeholder(tf.float32, [None, A3C_SCREEN_SIZE_X * A3C_SCREEN_SIZE_Y], name='spatial_action_selected')
             self.non_spatial_action_selected = tf.placeholder(tf.float32, [None, NUM_ACTIONS], name='non_spatial_action_selected')
             self.R = tf.placeholder(tf.float32, [None], name='R')
 
@@ -122,6 +145,11 @@ class A3CAgent():
         self.action_spec = action_spec
 
     def reset(self):
+        if not TRAINING:
+            self.episodes += 1
+            self.steps = 0
+            return
+
         if len(self.replay_states) > 0:
             self.episodes += 1
             self.steps = 0
@@ -152,6 +180,8 @@ class A3CAgent():
         self.tf_session.run(tf.global_variables_initializer())
 
     def step(self, obs):
+        self.steps += 1
+
         if A3CAgent.step_counter >= MAX_STEPS_TOTAL:
             self.update(LEARNING_RATE)
             # stopping the execution of the threads via an exception
@@ -170,22 +200,23 @@ class A3CAgent():
         action_id = self.executable_actions[np.argmax(np.ma.array(non_spatial_action, mask=valid_actions_mask))]
 
         action_target = np.argmax(spatial_action.ravel())
-        action_target = (action_target // SCREEN_SIZE_Y, action_target % SCREEN_SIZE_X)
+        action_target = (action_target // A3C_SCREEN_SIZE_Y, action_target % A3C_SCREEN_SIZE_X)
 
         random_action = False
         random_position = False
 
-        # exploration is done via a combination of epsilon greedy and and adaptive exploration rate
-        explore = (A3CAgent.step_counter + ((1 - self.exploration_rate) * MAX_STEPS_TOTAL)) / MAX_STEPS_TOTAL
+        if TRAINING:
+            # exploration is done via a combination of epsilon greedy and and adaptive exploration rate
+            explore = (A3CAgent.step_counter + ((1 - self.exploration_rate) * MAX_STEPS_TOTAL)) / MAX_STEPS_TOTAL
 
-        if np.random.rand() > explore or np.random.rand() < self.epsilon:
-            valid_actions = np.array(list(valid_actions), dtype=np.int32)
-            action_id = np.random.choice(valid_actions)
-            random_action = True
+            if np.random.rand() > explore or np.random.rand() < self.epsilon:
+                valid_actions = np.array(list(valid_actions), dtype=np.int32)
+                action_id = np.random.choice(valid_actions)
+                random_action = True
 
-        if np.random.rand() > explore or np.random.rand() < self.epsilon:
-            action_target = (np.random.randint(0, SCREEN_SIZE_Y - 1), np.random.randint(0, SCREEN_SIZE_X - 1))
-            random_position = True
+            if np.random.rand() > explore or np.random.rand() < self.epsilon:
+                action_target = (np.random.randint(0, A3C_SCREEN_SIZE_Y - 1), np.random.randint(0, A3C_SCREEN_SIZE_X - 1))
+                random_position = True
 
         self.replay_states.append((nn_input[self.nn.minimap],
                                    nn_input[self.nn.screen],
@@ -199,7 +230,7 @@ class A3CAgent():
             if arg.name in ('screen', 'minimap'):
                 arguments.append(action_target)
             else:
-                arguments.append([0])  # only executing direct action, no queuing
+                arguments.append([0]) # only executing direct actions, no queuing
 
         with A3CAgent.lock_step:
             A3CAgent.step_counter += 1
@@ -221,7 +252,7 @@ class A3CAgent():
         cumulated_rewards[0] = R
 
         valid_spatial_action = np.zeros(shape=(len(self.replay_states,)), dtype=np.float32)
-        spatial_action_selected = np.zeros(shape=(len(self.replay_states), SCREEN_SIZE_X * SCREEN_SIZE_Y), dtype=np.float32)
+        spatial_action_selected = np.zeros(shape=(len(self.replay_states), A3C_SCREEN_SIZE_X * A3C_SCREEN_SIZE_Y), dtype=np.float32)
         valid_non_spatial_action = np.zeros([len(self.replay_states), len(self.executable_actions,)], dtype=np.float32)
         non_spatial_action_selected = np.zeros([len(self.replay_states), len(self.executable_actions)], dtype=np.float32)
 
@@ -255,7 +286,7 @@ class A3CAgent():
             for arg in args:
                 if arg.name in ('screen', 'minimap'):
                     valid_spatial_action[i] = 1
-                    index = action_target[1] * SCREEN_SIZE_Y + action_target[0]
+                    index = action_target[1] * A3C_SCREEN_SIZE_Y + action_target[0]
                     spatial_action_selected[i, index] = 1
 
         total_reward = cumulated_rewards[-1]
@@ -337,7 +368,7 @@ class A3CAgent():
             os.mkdir(SAVE_PATH)
 
         with open(SAVE_PATH + 'python_vars.pickle', 'wb') as f:
-            pickle.dump((global_steps, global_episodes, SCREEN_SIZE_Y, SCREEN_SIZE_X), f)
+            pickle.dump((global_steps, global_episodes, A3C_SCREEN_SIZE_Y, A3C_SCREEN_SIZE_X), f)
         self.saver.save(self.tf_session, SAVE_PATH + 'SC2_A3C_harvester.ckpt')
 
         for k, v in action_logs.items():
@@ -357,8 +388,8 @@ class A3CAgent():
             screen_x = python_vars[2]
             screen_y = python_vars[3]
 
-            assert screen_x == SCREEN_SIZE_X, 'Agent was trained for a different resolution (X-axis)'
-            assert screen_y == SCREEN_SIZE_Y, 'Agent was trained for a different resolution (Y-axis)'
+            assert screen_x == A3C_SCREEN_SIZE_X, 'Agent was trained for a different resolution (X-axis)'
+            assert screen_y == A3C_SCREEN_SIZE_Y, 'Agent was trained for a different resolution (Y-axis)'
 
         A3CAgent.action_logs[self.agent_id] = ET.parse(LOG_PATH + 'agent{:02d}.xml'.format(self.agent_id))
         root = A3CAgent.action_logs[self.agent_id].getroot()

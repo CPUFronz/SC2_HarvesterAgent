@@ -4,7 +4,7 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 from xml.etree import ElementTree as ET
-from constants import LOG_PATH, SAVE_PATH, PLOT_PATH
+from a3c_agent import LOG_PATH, SAVE_PATH, PLOT_PATH
 
 
 def read_xml(filename):
@@ -76,7 +76,7 @@ if __name__ == '__main__':
         plt.ylabel(y_label)
         plt.xlabel('Episodes')
         plt.savefig(PLOT_PATH + k + '.png')
-#        plt.show()
+        plt.show()
         plt.close()
 
         plt.hist(v)
@@ -84,7 +84,7 @@ if __name__ == '__main__':
         plt.xlabel(k.title() + ' per Episode')
         plt.ylabel('Episode Frequency')
         plt.savefig(PLOT_PATH + k + '_histogram.png')
-#        plt.show()
+        plt.show()
         plt.close()
 
     best_episodes(results)

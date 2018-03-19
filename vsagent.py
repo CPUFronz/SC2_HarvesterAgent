@@ -33,6 +33,8 @@ GEYSER = 342
 # Parameters
 SCREEN = [0]
 
+VS_SCREEN_SIZE_X = 84
+VS_SCREEN_SIZE_Y = 84
 
 class VerySimpleAgent(base_agent.BaseAgent):
     """ A very simple scripted pysc2-agent that collects resources.
@@ -50,7 +52,9 @@ class VerySimpleAgent(base_agent.BaseAgent):
         self.scv_selected = False
         self.refinery_count = 0
         # only use geysers on the top left and bottom right corner
-        self.geyser_locations = [(0, 84//2, 0, 84//2), (84//2, 84, 84//2, 84)]
+        self.geyser_locations = [
+            (0, VS_SCREEN_SIZE_Y // 2, 0, VS_SCREEN_SIZE_X // 2),
+            (VS_SCREEN_SIZE_Y // 2, VS_SCREEN_SIZE_Y, VS_SCREEN_SIZE_X // 2, VS_SCREEN_SIZE_X)]
 
     def action(self, action_id, parameters):
         """Helper method to execute an action.
