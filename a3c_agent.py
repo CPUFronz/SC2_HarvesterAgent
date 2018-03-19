@@ -102,15 +102,15 @@ class A3CAgent():
             self.summary.append(tf.summary.scalar('value_loss', self.value_loss))
 
             self.learning_rate = tf.placeholder(tf.float32, None, name='learning_rate')
-            optimizer = tf.train.RMSPropOptimizer(self.learning_rate, decay=0.99, epsilon=1e-10)
+            optimizer = tf.train.RMSPropOptimizer(self.learning_rate, decay=0.99, epsilon=1e-10, use_locking=True)
             gradients = optimizer.compute_gradients(loss)
             clipped_gradients = []
             for grad, var in gradients:
+                grad = tf.clip_by_norm(grad, 100.0)
+                clipped_gradients.append([grad, var])
+
                 self.summary.append(tf.summary.histogram(var.op.name, var))
                 self.summary.append(tf.summary.histogram(var.op.name + '/grad', grad))
-
-                grad = tf.clip_by_norm(grad, 10.0)
-                clipped_gradients.append([grad, var])
             self.train = optimizer.apply_gradients(clipped_gradients)
             self.summary_op = tf.summary.merge(self.summary)
 
@@ -144,6 +144,7 @@ class A3CAgent():
             if global_episode % CHECKPOINT == 0:
                 print('Episode: {0:d}, step {1:d}/{2:d}, saving model...'.format(global_episode, global_steps, MAX_STEPS_TOTAL))
                 self.save_checkpoint(global_steps, global_episode)
+                print('Model saved')
         else:
             self.episode_start = time.time()
 
@@ -307,7 +308,6 @@ class A3CAgent():
         screen = np.array(observation['screen'], dtype=np.float32)
         screen = np.delete(screen, [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16], 0)
         screen = np.expand_dims(screen, axis=0)
-        # TODO: add available actions as well
         non_spatial_features = np.array([
             observation['player'][1],
             observation['player'][2],
@@ -392,7 +392,7 @@ class A3CAgent():
         # add all episodes to the list, sort them and prune the list
         minerals_per_episode.sort(key=lambda tup: tup[1], reverse=True)
         gas_per_episode.sort(key=lambda tup: tup[1], reverse=True)
-        kept_episodes = set([i[0] for i in minerals_per_episode[:DETAILED_LOGS] + gas_per_episode[:DETAILED_LOGS] + [j for j in range(episode - DETAILED_LOGS, episode)]])
+        kept_episodes = set([i[0] for i in minerals_per_episode[:DETAILED_LOGS] + gas_per_episode[:DETAILED_LOGS]] + [j for j in range(self.episodes - DETAILED_LOGS + 1, self.episodes + 1)])
         other_episodes = set([i[0] for i in minerals_per_episode + gas_per_episode]) - kept_episodes
 
         log_entry = ET.SubElement(tree.getroot(), 'episode')
@@ -425,22 +425,3 @@ class A3CAgent():
                 remove_entry.remove(r)
 
         A3CAgent.action_logs[self.agent_id] = tree
-
-# training error from actor and critic
-
-# report: detailed description of what the program is doing, how it's working, architecture, technical side, results
-# inspect update of weights
-# record average error of each episode (from the gradients)
-# reward function over time, and score
-# output of actions
-# different map
-
-# TODO:
-# * main aufräumen und für andere Agenten vorbereiten
-# * RUN Funktion (!!!)
-# * Episodennummer laden, prune XMLs
-#mehr episoden, available actions as input
-
-# Warnung bezueglich 4GB GPU
-# Unterschied zwischen Episoden Nummern erklären
-# Grund warum Episoden mit Mineralen nicht dabei sind, aber neuere Episoden mit 0,0: Gas

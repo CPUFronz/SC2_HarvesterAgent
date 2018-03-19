@@ -9,16 +9,17 @@ MINIMAP_FEATURES = 2
 SCREEN_FEATURES = 3
 
 DISCOUNT_FACTOR = 0.99
-EXPLORATION_RATE = 0.3
+EXPLORATION_RATE = 0.4
 LEARNING_RATE = 10e-3
 EPSILON = 0.05
 
 NUM_BATCHES = 20
 PARALLEL_THREADS = 16
 MAX_STEPS_TOTAL = 600 * 10**6 # TODO: check if it really exits (e.g. after 100 steps)
-CHECKPOINT = 100
+CHECKPOINT = 500
 SAVE_PATH = './saved_checkpoints/'
 LOG_PATH = './logs/'
+PLOT_PATH = './plots/'
 DETAILED_LOGS = 10 # detailed logs are kept for top 10 episodes for minerals and gas, as well as for the last 10 episodes
 RENDER = False
 SHOW_PROGRESS = True
