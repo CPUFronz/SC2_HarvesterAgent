@@ -90,6 +90,8 @@ if __name__ == '__main__':
         step_count = python_vars[0]
         episode_count = python_vars[1]
 
+    print('Results from {:d} episodes:\n'.format(episode_count))
+
     results = []
     for i in glob.glob(LOG_PATH + '*.xml'):
         results += read_xml(i)
@@ -109,7 +111,8 @@ if __name__ == '__main__':
         os.makedirs(PLOT_PATH)
 
     for k,v in result_dict.items():
-        plt.plot(episodes[::1000], averaged_mean(v, 1000))
+        plt.plot(episodes, v, '.', color='orange')
+        plt.plot(episodes[::500], averaged_mean(v, 500))
         plt.title(k.title())
         if k == 'rewards':
             y_label = 'Gained ' + k.title()

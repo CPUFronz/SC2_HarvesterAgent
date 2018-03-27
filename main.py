@@ -47,11 +47,15 @@ def start_a3c_agent():
         agents = []
         for i in range(parallel):
             agent = A3CAgent(session, i, summary_writer)
+            restored_session = False
             if os.path.exists(SAVE_PATH):
                 agent.load_checkpoint()
+                restored_session = True
 
             agents.append(agent)
-        agent.initialize()
+
+        if not restored_session:
+            agent.initialize()
 
         threads = []
         show = show_render

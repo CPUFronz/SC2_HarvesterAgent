@@ -51,14 +51,17 @@ class NeuralNetwork:
 
         minimap_conv1 = layers.conv2d(tf.transpose(self.minimap, [0, 2, 3, 1]), num_outputs=16, kernel_size=5, stride=1,scope='minimap_conv1')
         minimap_conv2 = layers.conv2d(minimap_conv1, num_outputs=32, kernel_size=3, stride=1, scope='minimap_conv2')
+
         screen_conv1 = layers.conv2d(tf.transpose(self.screen, [0, 2, 3, 1]), num_outputs=16, kernel_size=5, stride=1,scope='screen_conv1')
         screen_conv2 = layers.conv2d(screen_conv1, num_outputs=32, kernel_size=3, stride=1, scope='screen_conv2')
+
         non_spatial_features = layers.fully_connected(layers.flatten(self.non_spatial_features), num_outputs=256, activation_fn=tf.tanh, scope='non_spatial_features')
-        feat_conv = tf.concat([minimap_conv2, screen_conv2], axis=3)
-        spatial_action = layers.conv2d(feat_conv, num_outputs=1, kernel_size=1, stride=1, activation_fn=None, scope='spatial_action')
-        self.spatial_action = tf.nn.softmax(layers.flatten(spatial_action))
+        features_convoluted = tf.concat([minimap_conv2, screen_conv2], axis=3)
+        spatial_action = layers.conv2d(features_convoluted, num_outputs=1, kernel_size=1, stride=1, activation_fn=None, scope='spatial_action')
         full_features = tf.concat([layers.flatten(minimap_conv2), layers.flatten(screen_conv2), non_spatial_features], axis=1)
         full_features = layers.fully_connected(full_features, num_outputs=256, activation_fn=tf.nn.relu, scope='full_features')
+
+        self.spatial_action = tf.nn.softmax(layers.flatten(spatial_action))
         self.non_spatial_action = layers.fully_connected(full_features, num_outputs=NUM_ACTIONS, activation_fn=tf.nn.softmax, scope='non_spatial_action')
         self.value = tf.reshape(layers.fully_connected(full_features, num_outputs=1, activation_fn=None, scope='value'), [-1])
 
@@ -269,7 +272,7 @@ class A3CAgent():
             screen.append(scr)
             non_spatial_features.append(info)
 
-            # reward is minerals, gas * 10, collection_rate_minerals * 10, collection_rate_gas * 100
+            # reward is minerals + gas * 10 + collection_rate_minerals * 10 + collection_rate_gas * 100
             reward = info.flatten()[8] + info.flatten()[9] * 10 + info.flatten()[10] * 10 + info.flatten()[11] * 100
 
             if i > 0:
@@ -279,6 +282,8 @@ class A3CAgent():
             valid_actions_indices = [0] * len(self.executable_actions)
             for j in valid_actions:
                 valid_actions_indices[self.executable_actions.index(j)] = 1
+
+            valid_non_spatial_action[i] = valid_actions_indices
 
             non_spatial_action_selected[i, self.executable_actions.index(action_id)] = 1
 
@@ -339,6 +344,7 @@ class A3CAgent():
         screen = np.array(observation['screen'], dtype=np.float32)
         screen = np.delete(screen, [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16], 0)
         screen = np.expand_dims(screen, axis=0)
+        # TODO: add observation['single_select']
         non_spatial_features = np.array([
             observation['player'][1],
             observation['player'][2],
