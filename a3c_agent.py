@@ -2,6 +2,7 @@
 """
 @author: Franz Papst
 """
+
 import os
 import time
 import pickle
@@ -41,7 +42,18 @@ SHOW_PROGRESS = True
 
 
 class NeuralNetwork:
-    def __init__(self, n_outputs=NUM_ACTIONS):
+    """Neural Network for the agent.
+
+    This class builds the neural network part of the TensorFlow graph. It consists of two convolutional neural networks
+    for screen and minimap as well as a fully connected neural network to connect the spatial inputs with the non-spatial
+    features and another convoluted neural network that gives the position of the spatial actions, as well as one more
+    fully connected neural network for selecting the non-spatial action and another fully connected neural network that
+    gives the value of a given state.
+
+    Based on https://github.com/xhujoy/pysc2-agents
+    """
+    def __init__(self):
+        """Builds the neural network."""
         assert A3C_MINIMAP_SIZE_X == A3C_SCREEN_SIZE_X, 'resolution of minimap and screen have to be the same (X-axis)'
         assert A3C_MINIMAP_SIZE_Y == A3C_SCREEN_SIZE_Y, 'resolution of minimap and screen have to be the same (Y-axis)'
 
@@ -66,7 +78,16 @@ class NeuralNetwork:
         self.value = tf.reshape(layers.fully_connected(full_features, num_outputs=1, activation_fn=None, scope='value'), [-1])
 
 
-class A3CAgent():
+class A3CAgent:
+    """An agent for collecting resources using the asynchronous advantage actor-critic algorithm.
+
+    This agent uses the above defined neural network and implements the synchronous advantage actor-critic algorithm (A3C)
+    Since the algorithm is based on running multiple instances in parallel the following static members are used to
+    keep certain aspects (like the total number of steps or the total number of episodes) in synch. It also uses a static
+    member for keeping track of all the steps an agent has performed.
+
+    Based on https://github.com/xhujoy/pysc2-agents
+    """
     step_counter = 0
     episode_counter = 0
     action_logs = {}
@@ -74,6 +95,17 @@ class A3CAgent():
     lock_episode = threading.Lock()
 
     def __init__(self, session, agent_id, summary_writer, name='A3CAgent'):
+        """Initialises the agent.
+
+        It also adds more operations as well as inputs to the computation graph, like the advantage function or masking
+        to only use valid actions and positions as input for the advantage function. It uses the RMSPropOptimizer as
+        optimiser.
+
+        :param session: the TensorFlow session to which the agent instances belong
+        :param agent_id: the number of the agent instance
+        :param summary_writer: the summary writer for storing the progress of TensorFlow's weight updates
+        :param name: the name of the TensorFlow scope
+        """
         self.reward = 0
         self.episodes = 0
         self.steps = 0
@@ -144,10 +176,20 @@ class A3CAgent():
         self.saver = tf.train.Saver()
 
     def setup(self, obs_spec, action_spec):
+        """Setup method, called by the environment when starting the agent."""
         self.obs_spec = obs_spec
         self.action_spec = action_spec
 
     def reset(self):
+        """Reset method, called by the environment when an episode finishes.
+
+        This method gets called when the environment is set-up and when an episode finishes. It resets the number of
+        steps this agent instance has taken and increases the number of episodes for this agent instance by one. If the
+        agent instance has replay states (which is only not the case when this method is called during the initialisation
+        of the agent) it also calls the method for updating the weights of the neural network. If the SHOW_PROGRESS
+        flag is set, it outputs the number of the global episode (for all agent instances) and how long it took. Every
+        CHECKPOINT episodes it calls the method for saving a checkpoint.
+        """
         if not TRAINING:
             self.episodes += 1
             self.steps = 0
@@ -161,8 +203,7 @@ class A3CAgent():
                 global_episode = A3CAgent.episode_counter
                 global_steps = A3CAgent.step_counter
 
-            learning_rate = LEARNING_RATE * (1 - 0.9 * A3CAgent.step_counter / MAX_STEPS_TOTAL)
-            reward, policy_loss, value_loss = self.update(learning_rate)
+            reward, policy_loss, value_loss = self.update()
 
             self.save_action_log(global_episode, reward, policy_loss, value_loss)
             self.replay_states = []
@@ -180,9 +221,26 @@ class A3CAgent():
             self.episode_start = time.time()
 
     def initialize(self):
+        """Initialises a TensorFlow session.
+
+        This method gets only called once for one agent instance, but since the variables are shared it applies for all
+        agent instance. If the session restored from what's saved to hard disk, it must not get called, otherwise it
+        will overwrite the restored values.
+        """
         self.tf_session.run(tf.global_variables_initializer())
 
     def step(self, obs):
+        """One step of an agent instance.
+
+        This method selects which action to exectue and where. It does so by feeding the current state into the neural
+        network. During the training of the agent it can also return a random action or a random position. The probability
+        of this depends on how many global steps the agent has taken: the more, the less likely it is for the agent to
+        perform a random action, but even if this adaptive probability is one, it can perform a random action with the
+        probability of an predefined epsilon.
+
+        :param obs: the observation of the game state
+        :return: the action the agent is going to execute
+        """
         self.steps += 1
 
         if A3CAgent.step_counter >= MAX_STEPS_TOTAL:
@@ -240,7 +298,20 @@ class A3CAgent():
 
         return actions.FunctionCall(action_id, arguments)
 
-    def update(self, learning_rate):
+    def update(self):
+        """Updating the weights of the neural network.
+
+        This method updates the weights of the neural network, it is the implementation of the A3C algorithm. It puts
+        the input data in a shape that can be fed into the TensorFlow graph, note that the input data is split into
+        NUM_BATCH chunks, this is done so that the algorithm can also run on a regular notebook GPU and not allocate
+        more VRAM than available (tested with 4GB of VRAM).
+        The learning rate for the updates is decreasing over time, the earlier, the higher the learning rate.
+        The return values are for saving the progress of the updating.
+
+        :return: total reward of that episode, loss of actor, loss of critic
+        """
+        learning_rate = LEARNING_RATE * (1 - 0.9 * A3CAgent.step_counter / MAX_STEPS_TOTAL)
+
         # if the last state in the buffer is a terminal state, set R=0
         if self.replay_states[-1][-1]:
             R = 0
@@ -338,6 +409,14 @@ class A3CAgent():
         return total_reward, avg_losses[0], avg_losses[1]
 
     def create_feed_dict(self, observation):
+        """Creates a feed dictionary for TensorFlow.
+
+        This method gets called from step() and takes an observation as input, it reshapes and reduces some of the input
+         data in the way how it is needed for the agent and creates a dictionary that can be fed into TensorFlow.
+
+        :param observation: all current observations from the environment
+        :return: a dictionary that can be fed into TensorFlow
+        """
         minimap = np.array(observation['minimap'], dtype=np.float32)
         minimap = np.delete(minimap, [0, 2, 4, 5, 6], 0)
         minimap = np.expand_dims(minimap, axis=0)
@@ -368,6 +447,15 @@ class A3CAgent():
         return feed_dict
 
     def save_checkpoint(self, global_steps, global_episodes):
+        """Saves a checkpoint.
+
+        This method saves the current weights of the neural network (using TensorFlow's saver) as well as some metadata
+        (saved in Python variables) and log files for all agent instances. It get called every CHECKPOINT episodes from
+        reset().
+
+        :param global_steps: the current number of the agent's total steps
+        :param global_episodes: the current number of the agent's total episodes
+        """
         action_logs = A3CAgent.action_logs
 
         if not os.path.exists(SAVE_PATH):
@@ -384,6 +472,15 @@ class A3CAgent():
                 reparsed.writexml(f, addindent='  ', newl='\n')
 
     def load_checkpoint(self):
+        """Restores a checkpoint.
+
+        This method loads and restores a previous run of the agent: the weights of the neural network(using TensorFlow's
+        saver class), as well as some metadata (saved in Python variables) and the log files for each agent instance (as
+        XML). It also performs some checks whether the specifications of the restored agent match with the current agent.
+        It gets called from the start_a3c_agent() function in main.
+
+        :return: whether the restoring of the agent instance was successful
+        """
         if not os.path.exists(SAVE_PATH):
             raise FileNotFoundError('Could not find saved model.')
 
@@ -397,14 +494,33 @@ class A3CAgent():
             assert screen_x == A3C_SCREEN_SIZE_X, 'Agent was trained for a different resolution (X-axis)'
             assert screen_y == A3C_SCREEN_SIZE_Y, 'Agent was trained for a different resolution (Y-axis)'
 
-        A3CAgent.action_logs[self.agent_id] = ET.parse(LOG_PATH + 'agent{:02d}.xml'.format(self.agent_id))
-        root = A3CAgent.action_logs[self.agent_id].getroot()
-        self.episodes = int(root.getchildren()[-1].attrib['num_agent'])
+        loaded_successfully = True
+        try:
+            A3CAgent.action_logs[self.agent_id] = ET.parse(LOG_PATH + 'agent{:02d}.xml'.format(self.agent_id))
+            root = A3CAgent.action_logs[self.agent_id].getroot()
+            self.episodes = int(root.getchildren()[-1].attrib['num_agent'])
+        except FileNotFoundError:
+            print('Could not find XML file for agent {:d}'.format(self.agent_id))
+            loaded_successfully = False
 
         checkpoint = tf.train.get_checkpoint_state(SAVE_PATH)
         self.saver.restore(self.tf_session, checkpoint.model_checkpoint_path)
 
+        return loaded_successfully
+
     def save_action_log(self, num_episode, reward, policy_loss, value_loss):
+        """Saves the logs of all agent instances to a XML.
+
+        This method creates a XML log, if it doesn't exist already, otherwise it will append the results for the currently
+        finished episode to XML log. In order to keep the file size reasonable it only stores the detailed action logs
+        of the top 10 episodes for reward, collected minerals and collected gas as well as for the last 10 episodes.
+        It gets called from reset() after every episode.
+
+        :param num_episode: current total number of episodes
+        :param reward: reward for current episode
+        :param policy_loss: policy loss for current episode
+        :param value_loss: value loss for current episode
+        """
         if not A3CAgent.action_logs[self.agent_id]:
             root = ET.Element('action_logs')
             tree = ET.ElementTree(root)

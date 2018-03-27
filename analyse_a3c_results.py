@@ -5,10 +5,24 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
 from xml.etree import ElementTree as ET
-from a3c_agent import LOG_PATH, SAVE_PATH, PLOT_PATH
+from a3c_agent import LOG_PATH, SAVE_PATH, PLOT_PATH, CHECKPOINT
+
+"""Script for analysing agent's actions.
+
+This script reads all XML log files and plots figures and histograms for the rewards, collected minerals and collected
+ gas. It finds the best 10 episodes in terms of those three factors and computes statistics about the performed actions. 
+"""
 
 
 def read_xml(filename):
+    """Reads and parses and XML file.
+
+    This function reads and parses a given XML file and returns a list of all global episode numbers, rewards, gas and
+    XML tags (including actions, if available) of the episodes.
+
+    :param filename: the name of the XML file to read
+    :return: a list of all global episode numbers, rewards, gas and XML tags in that XML file
+    """
     results = []
     xml = ET.parse(filename)
     root = xml.getroot()
@@ -24,10 +38,25 @@ def read_xml(filename):
 
 
 def averaged_mean(x, N):
+    """Computes an averaged mean for a given input.
+
+    :param x: the array with all values
+    :param N: the window size for the average
+    :return: the averaged mean
+    """
     return np.array([np.mean(x[N * i:N * (i + 1)]) for i in range(len(x) // N)])
 
 
 def best_episodes(results, n=10):
+    """Finds the best n episodes for reward, collected minerals and collected gas.
+
+    This function finds the best n episodes for reward, collected minerals and collected gas and prints them to the
+    terminal.
+
+    :param results: an array of all episode number, reward, minerals and gas for all episodes
+    :param n: how many top episodes the function should return
+    :return: a directory with the episode number of the best episodes for reward, minerals and gas
+    """
     top = {
         'rewards': results[results[:, 1].argsort()][::-1,:][:n],
         'minerals': results[results[:, 2].argsort()][::-1,:][:n],
@@ -48,6 +77,14 @@ def best_episodes(results, n=10):
 
 
 def analyse_actions(episodes):
+    """Analyses the actions performed in the episodes.
+
+    This function iterates over all episodes and if an episode has the performed actions as child nodes, it counts
+    whether they were performed because of randomness or not. It prints the frequency of all actions as well as the of
+    the random an non-ranodm ones to the terminal.
+
+    :param episodes: a list of XML nodes, representing the episodes
+    """
     actions_counter = Counter()
     actions_counter_random = Counter()
 
@@ -85,6 +122,10 @@ def analyse_actions(episodes):
 
 
 if __name__ == '__main__':
+    """Main function, it runs the script.
+    
+    It iterates over all XML files in the LOG_PATH and calls all functions above. It also plots the results to PLOT_PATH.
+    """
     with open(SAVE_PATH + 'python_vars.pickle', 'rb') as f:
         python_vars = pickle.load(f)
         step_count = python_vars[0]
@@ -111,9 +152,11 @@ if __name__ == '__main__':
         os.makedirs(PLOT_PATH)
 
     for k,v in result_dict.items():
-        plt.plot(episodes, v, '.', color='orange')
-        plt.plot(episodes[::500], averaged_mean(v, 500))
+        plt.plot(episodes, v, '.', color='orange', label='Total')
+        plt.plot(episodes[::CHECKPOINT], averaged_mean(v, CHECKPOINT), label='Smoothened Average')
         plt.title(k.title())
+        plt.legend()
+
         if k == 'rewards':
             y_label = 'Gained ' + k.title()
         else:

@@ -110,7 +110,7 @@ class QLearningTable:
 
 
 class SlightlySmarterAgent(base_agent.BaseAgent):
-    """ A slightly smarter pysc2-agent for collecting resources using simple Q-learning
+    """A slightly smarter pysc2-agent for collecting resources using simple Q-learning
 
     The implementation will harvest minerals and build refineries on geysers next to the agent's starting position, this
     agent does not explore the map.
