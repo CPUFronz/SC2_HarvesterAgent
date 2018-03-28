@@ -164,7 +164,7 @@ class A3CAgent:
             gradients = optimizer.compute_gradients(loss)
             clipped_gradients = []
             for grad, var in gradients:
-                grad = tf.clip_by_norm(grad, 100.0)
+                grad = tf.clip_by_norm(grad, 100.0) # if gradients get updated more frequently, it probably should be 10
                 clipped_gradients.append([grad, var])
 
                 self.summary.append(tf.summary.histogram(var.op.name, var))
@@ -305,11 +305,15 @@ class A3CAgent:
         the input data in a shape that can be fed into the TensorFlow graph, note that the input data is split into
         NUM_BATCH chunks, this is done so that the algorithm can also run on a regular notebook GPU and not allocate
         more VRAM than available (tested with 4GB of VRAM).
+        It gets called from reset() after an episode finishes, in order to make it converge faster it should be probably
+        called more frequently from step() e.g. after every 100 steps.
         The learning rate for the updates is decreasing over time, the earlier, the higher the learning rate.
-        The return values are for saving the progress of the updating.
+        The return values are for saving the progress of the update.
 
         :return: total reward of that episode, loss of actor, loss of critic
         """
+        #TODO: restructure method, so can be called from step() without resetting the results for an episode
+
         learning_rate = LEARNING_RATE * (1 - 0.9 * A3CAgent.step_counter / MAX_STEPS_TOTAL)
 
         # if the last state in the buffer is a terminal state, set R=0
