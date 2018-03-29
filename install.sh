@@ -4,7 +4,6 @@
 GPU=false
 INSTALL_DIR=$PWD
 
-echo $INSTALL_DIR
 
 for i in "$@"
 do 
@@ -19,6 +18,8 @@ esac
 done
 
 cd $INSTALL_DIR
+
+echo Installing into $INSTALL_DIR
 
 wget http://blzdistsc2-a.akamaihd.net/Linux/SC2.3.17.zip
 unzip -P iagreetotheeula SC2.3.17.zip
@@ -44,5 +45,3 @@ if grep -q "export SC2PATH=" $INSTALL_DIR/venv/bin/activate
     printf "\n#Installation path for StarCraft 2, needed for pysc2" >> $INSTALL_DIR/venv/bin/activate
     printf "\nexport SC2PATH=$INSTALL_DIR/StarCraftII\n" >> $INSTALL_DIR/venv/bin/activate
 fi
-
-#TODO: git clone

@@ -369,7 +369,7 @@ class A3CAgent:
                     index = action_target[1] * A3C_SCREEN_SIZE_Y + action_target[0]
                     spatial_action_selected[i, index] = 1
 
-        total_reward = cumulated_rewards[-1]
+        final_reward = cumulated_rewards[-1]
 
         minimap = np.array(minimap).squeeze()
         screen = np.array(screen).squeeze()
@@ -410,7 +410,7 @@ class A3CAgent:
         self.replay_actions.reverse()
 
         avg_losses = losses.mean(axis=0)
-        return total_reward, avg_losses[0], avg_losses[1]
+        return final_reward, avg_losses[0], avg_losses[1]
 
     def create_feed_dict(self, observation):
         """Creates a feed dictionary for TensorFlow.

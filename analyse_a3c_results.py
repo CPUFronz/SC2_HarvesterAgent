@@ -88,7 +88,12 @@ def analyse_actions(episodes):
     actions_counter = Counter()
     actions_counter_random = Counter()
 
+    episodes_action = 0
+
     for i in episodes:
+        if len(i.getchildren()) > 0:
+            episodes_action += 1
+
         for j in i.getchildren():
             random_action = j.attrib['random_action'] == 'True'
             random_postion = j.attrib['random_position'] == 'True'
@@ -104,6 +109,10 @@ def analyse_actions(episodes):
                            'Morph_SupplyDepot_Lower_quick', 'Morph_SupplyDepot_Raise_quick')
 
     total_actions_num = sum(actions_counter.values())
+
+    print('Number of episodes with actions: {:d}'.format(episodes_action))
+    print('Number of actions for analysis: {:d}\n'.format(total_actions_num))
+
     print('Frequency of Actions')
     for i in actions_counter.most_common():
         print('{0:31s}: {1:3.5}%'.format(i[0], (i[1]/total_actions_num) * 100))
@@ -131,8 +140,6 @@ if __name__ == '__main__':
         step_count = python_vars[0]
         episode_count = python_vars[1]
 
-    print('Results from {:d} episodes:\n'.format(episode_count))
-
     results = []
     for i in glob.glob(LOG_PATH + '*.xml'):
         results += read_xml(i)
@@ -153,7 +160,7 @@ if __name__ == '__main__':
 
     for k,v in result_dict.items():
         plt.plot(episodes, v, '.', color='orange', label='Total')
-        plt.plot(episodes[::CHECKPOINT], averaged_mean(v, CHECKPOINT), label='Smoothened Average')
+        plt.plot(episodes[::CHECKPOINT], averaged_mean(v, CHECKPOINT), label='Smoothed Average')
         plt.title(k.title())
         plt.legend()
 
@@ -168,7 +175,7 @@ if __name__ == '__main__':
         plt.show()
         plt.close()
 
-        plt.hist(v)
+        (_, bins, _) = plt.hist(v, bins=10)
         plt.title('Histogram of ' + k.title())
         plt.xlabel(k.title() + ' per Episode')
         plt.ylabel('Episode Frequency')
@@ -176,5 +183,8 @@ if __name__ == '__main__':
         plt.show()
         plt.close()
 
+        print('Bin size for {0:s}: {1:5.1f}'.format(k, bins[1]))
+
+    print('\n\nResults from {:d} episodes:\n'.format(episode_count))
     best = best_episodes(results_array)
     analyse_actions(results_xml)
