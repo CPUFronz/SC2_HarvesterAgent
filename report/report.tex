@@ -15,24 +15,28 @@
 \maketitle
 
 \section{Introduction}
-Recent advances in deep reinforcement learning algorithms have successfully 
-mastered the game of Go \cite{Silver2016} and are able to achieve super-human 
-performance in classic Atari video games \cite{Mnih2013}. After this 
-accomplishments artificial intelligence researchers are looking for a new grand 
-challenge. The computer real-time strategy game StarCraft 2 seems to be a 
-promising domain for research on reinforcement learning algorithms, since it 
-provides a problem set that is more challenging that what was done in prior 
-work. E.g. it is a multi-agent problem with multiple players interacting, it 
-only give imperfect information and has a large action space \cite{Vinyals2017}.
+Recent advances in deep reinforcement learning have successfully mastered the 
+game of Go \cite{Silver2016} and are able to achieve super-human performance in 
+classic Atari video games \cite{Mnih2013}. After this accomplishments, 
+artificial intelligence researchers are looking for a new grand challenge. The 
+computer real-time strategy game StarCraft 2 seems to be a promising domain for 
+research on reinforcement learning algorithms, since it provides a problem set 
+that is more challenging that what was done in prior work. E.g. it is a 
+multi-agent problem with multiple players interacting, in an environment that 
+only gives imperfect information and has a large action space 
+\cite{Vinyals2017}.
 
-This work is dealing with a subdomain for the whole problem set: it is about 
-building an agent that is able to harvest resources as efficiently as possible. 
-To solve this task I implemented an agent using the asynchronous advantage 
-actor critic (A3C) algorithm \cite{Mnih2016} with TensorFlow. This report will 
-firstly introduce the StarCraft 2 problem domain, by giving a detailed 
-introduction into its environment. Then I will describe my agent, its 
-architecture, the A3C algorithm and I implemented this algorithm. Finally I 
-will analyse the performance of the agent as well as its behaviour.
+This report is about my work, which is dealing with a subdomain for the whole 
+problem set: it is about building an agent that is able to harvest resources as 
+efficiently as possible. To solve this task I implemented an agent using the 
+asynchronous advantage actor critic (A3C) algorithm \cite{Mnih2016} with 
+TensorFlow. This report will firstly introduce the StarCraft 2 problem domain, 
+by giving a detailed introduction into its environment. Then I will describe my 
+agent, its architecture, the A3C algorithm and how I implemented this 
+algorithm. Finally I will analyse the performance of the agent as well as its 
+behaviour.
+
+
 
 \section{Environment}
 The pysc2 framework\footnote{\url{https://github.com/deepmind/pysc2} verified 
@@ -46,7 +50,8 @@ will introduce which observations are provided by the framework, how they are
 connected to states and what actions the agent can perform.
 
 The information in this section is take from \cite{Deepmind2017} and 
-\cite{Blizzard2017} or from browsing the source code myself.
+\cite{Blizzard2017} or from reading the source code myself.
+
 
 \subsection{Observations}
 The pysc2 framework provides the following observations:
@@ -72,11 +77,12 @@ respectively on the game map. Both consist of different feature layers, as
 shown by figure \ref{screenshot}. All feature layers are two-dimensional 
 arrays, containing the information similar to the pixels in an image.
 
+
 \subsubsection{minimap}
-A low resolution of the whole game map, it gives an overview of what's going on 
-in the game, but with less detail. Initially it shows the whole map, but only 
-the terrain including information about where to find resources, the position 
-of the opponent is not shown, it is hidden by the so-called 
+The minimap is a low resolution of the whole game map, it gives an overview of 
+what's going on in the game, but with less detail. Initially it shows the whole 
+map, but only the terrain including information about where to find resources, 
+the position of the opponent is not shown, it is hidden by the so-called 
 ``fog-of-war''\footnote{Fog-of-war means that only those parts of the game 
 world are visible where the player has a unit. If no unit is there, the 
 visibility of that area slowly fades out so that only buildings remain visible, 
@@ -95,16 +101,16 @@ are currently visible. It takes values [0,1,2] denoting [hidden, have been
 seen, currently visible]
 \item \texttt{creep:} Which parts of the map are covered with Zerg 
 creep\footnote{One of the three races in the game, the Zerg, can only build 
-buildings if the ground is covered with ``creep''. Only the command centre and 
-the gas-extractor do not require to be build on creep. Creep can be extended by 
-building special structures or by performing a special action for expansion. 
-Zerg units move faster and regenerate when on creep, if a Zerg building is not 
-surrounded by creep, it will take damage over time (apart from those buildings 
-which don't need creep in the first place). This game-mechanism  emphasizes the 
-organic/insect-like nature of the Zerg, as well as adding another strategical 
-dimension to the game, when playing as Zerg, since it restricts where the 
-player can build structures.}. It takes values [0,1] denoting denoting [no 
-creep, creep].
+buildings if the ground is covered with ``creep''. Only their command centre 
+and the gas-extractor do not require to be build on creep. Creep can be 
+extended by building special structures or by performing a special action for 
+expansion. Zerg units move faster and regenerate when on creep, if a Zerg 
+building is not surrounded by creep, it will take damage over time (apart from 
+those buildings which don't need creep in the first place). This 
+game-mechanism  emphasizes the organic/insect-like nature of the Zerg, as well 
+as adding another strategical dimension to the game, when playing as Zerg, 
+since it restricts where the player can build structures.}. It takes values 
+[0,1] denoting denoting [no creep, creep].
 \item \texttt{camera:} Which part of the maps is visible by the screen layer. 
 It takes values [0,1] denoting [not visible, visible]
 \item \texttt{player\_id:} Which player owns the units. It takes values [0,16], 
@@ -122,12 +128,12 @@ denoting [not selected, selected].
 The screen represents the visual/spatial features of the current game, similar 
 to the \texttt{minimap}, showing only a part of the game map, but with a higher 
 resolution. So far the screen is only represented through feature layers, but 
-for future releases it is planned to add an RGB Pixel representation. Just like 
-for the \texttt{minimap} also here some details are hidden by the fog-of-war, 
-if there is no player unit present at the part of the map which is currently 
-shown by \texttt{screen}. The screen is a $(17, x, y)$ tensor, where $x$ and 
-$y$ are the x- and y-resolution of the game and the first dimension represents 
-the following features:
+for future releases it is planned to add an RGB Pixel representation 
+\cite{Vinyals2017}. Just like for the \texttt{minimap} also here some details 
+are hidden by the fog-of-war, if there is no player unit present at the part of 
+the map which is currently shown by \texttt{screen}. The screen is a $(17, x, 
+y)$ tensor, where $x$ and $y$ are the x- and y-resolution of the game and the 
+first dimension represents the following features:
 \begin{enumerate}[noitemsep,start=0]
 \item \texttt{height\_map:} The terrain level, like to \texttt{height\_level} 
 from \texttt{minimap}.
@@ -168,7 +174,7 @@ unit/energy to whatever value is the current amount of energy for units on
 screen.
 \item \texttt{unit\_energy\_ratio:} The relative amount of energy, similar to 
 \texttt{unit\_hit\_points\_ratio}. It takes values from 0 to 255, denoting no 
-unit/unit destroyed or a unit with 100\% hit points.
+unit/unit has no energy or a unit with 100\% energy points.
 \item \texttt{unit\_shields:} The absolute amount of shield points units on 
 screen have.\footnote{Note that only Protoss units have shields.} It takes 
 values for 0, denoting no unit/shield points to whatever value is the current 
@@ -185,12 +191,13 @@ summed up to a value of maximum 256.
 action (e.g. healing Terran units). It takes integer values from 0 to 
 3687.\footnote{A list of effect ids can be found here: 
 \url{https://github.com/Blizzard/s2client-api/blob/master/include/sc2api/sc2_typeenums.h}
- line 388ff., verified 2017-11-29.}
+ line 388ff., verified 2018-03-29.}
 \end{enumerate}
 
 
 \subsubsection{player}
-A $(11)$ tensor showing general information about the player, giving the following informations:
+A $(11)$ tensor showing general information about the player, giving the 
+following informations:
 \begin{enumerate}[noitemsep,start=0]
 \item \texttt{player\_id:} The ID of the player, an integer from 0 to 15.
 \item \texttt{minerals:} Current count of minerals.
@@ -253,7 +260,8 @@ units in the build queue.
 
 
 \subsubsection{cargo}
-A $(n, 7)$ tensor, similar to \texttt{single\_select}, but for $n$ units that are in a transporter.
+A $(n, 7)$ tensor, similar to \texttt{single\_select}, but for $n$ units that 
+are in a transporter.
 
 
 \subsubsection{control\_groups}
@@ -275,7 +283,7 @@ moving the screen), which are always available.
 \subsubsection{score\_cumulative}
 A $(13,)$ tensor showing the ``Blizzard score''. The Blizzard score is usually 
 presented to the player after the game, showing specific values of how he 
-played, in order to judge how well it was:
+played, in order to judge how good it was:
 \begin{enumerate}[noitemsep,start=0]
 \item \texttt{score:} The total Blizzard score for the current step, the higher 
 the better.
@@ -295,12 +303,12 @@ destroyed), the higher the better.
 units\footnote{Note that the value is not the same as for the 
 \texttt{total\_value\_units} fields: 
 \url{https://blizzard.github.io/s2client-api/sc2\_\_score\_8h\_source.html}, 
-line 109f., verified 2017-11-28.}, the higher the better.
+line 109f., verified 2018-03-29.}, the higher the better.
 \item \texttt{killed\_value\_structures:} Total sum of all destroyed enemy 
 buildings\footnote{Note that the value is not the same as for the 
 \texttt{total\_value\_structures} fields: 
 \url{https://blizzard.github.io/s2client-api/sc2\_\_score\_8h\_source.html}, 
-line 109f., verified 2017-11-28.}, the higher the better.
+line 109f., verified 2018-03-29.}, the higher the better.
 \item \texttt{collected\_minerals:} Total amount of collected minerals, the 
 higher the better.
 \item \texttt{collected\_vespene:} Total amount of collected gas, the higher 
@@ -338,17 +346,17 @@ framework.}
 \subsection{States}
 As the exhaustive description of all observations during a single game step 
 shows, the combination of possible states is huge. Therefore only the 
-combination of a few features qualify to become states for the reinforcement 
+combination of a few features qualifies to become states for the reinforcement 
 learning algorithm. What makes the whole situation even more difficult is the 
 fact that the action space is in general continuous, a large number of actions 
 needs x- and y-coordinates where it's performed.
 
 To reduce the agent's complexity, I will only use one of the three races for 
 the beginning. I chose the Terrans, the humans, since they are usually the race 
-used to teach the basics of Starcraft II. Unlike the other two races, they have 
+used to teach the basics of StarCraft II. Unlike the other two races, they have 
 no restrictions where they can build their structures. 
 
-I would propose to use the following features:
+I will use following:
 \begin{itemize}[noitemsep]
 \item \texttt{minimap}
 \begin{itemize}[noitemsep]
@@ -381,13 +389,6 @@ I would propose to use the following features:
 \item \texttt{available\_actions}
 \end{itemize}
 
-As a first naive approach all these features are fed into a simple 
-multi-layer-perceptron and mapped to a one-hot encoded output. The output layer 
-is a $(n, x, y)$ tensor, where $n$ is the one-hot encoded action and $x$ and 
-$y$ are the x- and y-coordinates of where the action should be performed. It 
-will be passed onto the agent, if an action that doesn't take any position 
-arguments is performed, those arguments will be ignored from the agent.
-
 
 \subsection{Actions}
 As mentioned above, the action space is huge, since it is continuous. But also 
@@ -405,16 +406,12 @@ target position. It requires a target position on the minimap.
 \item[\texttt{select\_point:}] Selects what is at the target position (the 
 action is also executed, if there is nothing at the target position, in that 
 case nothing is selected). It requires a target position on the screen.
-\item[\texttt{select\_rect:}] Selects all units that are within the rectangle 
-that's spanned by the two target points. It requires two positions on the 
-screen, where the first one is where the first click occurs (mouse button down) 
-and the second one is where the drag release occurs (mouse button up).
 \item[\texttt{select\_idle\_worker:}] Selects an idle worker (more or less 
 randomly). It requires no target position.
 \item[\texttt{Build\_CommandCenter\_screen":}] Builds a command centre. It 
 requires a target position on the screen.
 \item[\texttt{Build\_Refinery\_screen:}] Builds a refinery for gas on the 
-screen, not that a refinery can only by build on a vespene geyser. It requires 
+screen, note that a refinery can only by build on a vespene geyser. It requires 
 a target position on the screen.
 \item[\texttt{Build\_SupplyDepot\_screen":}] Builds a supply depot. It requires 
 a target position on screen.
@@ -482,7 +479,7 @@ interested in the value it returns.
 
 The agent uses TensorFlow 1.5 as library for machine learning, the 
 convolutional and fully connected neural networks are from the 
-\texttt{contrib.layers} submodule, \texttt{contrib} features volatile and 
+\texttt{contrib.layers} sub-module, \texttt{contrib} features volatile and 
 experimental code, \texttt{contrib.layers} features more higher level 
 operations for building neural networks.
 
@@ -579,12 +576,12 @@ T_{max}}{T_{max}}
 \end{equation}
 
 Where $\epsilon_{explore} = 0.4$ and $T_{max} = 600 \cdot 
-10^6$\footnote{$T_{max}$ is the maximum amount of steps that the 
-agent makes.} In addition to this adaptive probability there exists a second 
-chance for an action to be random: an $\epsilon$-greedy exploration where 
-$\epsilon = 0.05$. This was implemented so that the agent keeps exploring, even 
-when the adaptive exploration probability reaches $0$, which happens after $240 
-\cdot 10^6$ steps. The total probability of a random action is:
+10^6$ (the maximum amount of steps that the agent makes). In addition to this 
+adaptive probability there exists a second chance for an action to be random: 
+an $\epsilon$-greedy exploration where $\epsilon = 0.05$. This was implemented 
+so that the agent keeps exploring, even when the adaptive exploration 
+probability reaches $0$, which happens after $240 \cdot 10^6$ steps. The total 
+probability of a random action is:
 
 \begin{equation}
 P(total) = P(a) + P(\epsilon)
@@ -618,10 +615,10 @@ given that the agent keeps on doing actions that give rewards. If the agent
 performs actions that decrease the rewards, also the reward decreases. The 
 reward function is explained in section \ref{rewards}.
 
-The optimiser for updating the weights is the RMSPropOptimizer \cite{RMSPROP} 
-with $\epsilon = 0.1$ and $decay = 0.99$, the learning rate is variable and 
-decreases the more steps the agent has performed. It can be calculated using 
-the following formula:
+The optimiser for updating the weights is the RMSPropOptimizer 
+\cite{Hinton2014} with $\epsilon = 0.1$ and $decay = 0.99$, the learning rate 
+is variable and decreases the more steps the agent has performed. It can be 
+calculated using the following formula:
 
 \begin{equation}
 \eta_0 \cdot \left(1 - 0.9 \cdot 
@@ -652,8 +649,10 @@ weights are saved to hard disk.
 
 \subsubsection{Reward Function}
 \label{rewards}
+The reward function for each step is:
 \begin{equation}
-minerals\ +\ gas\ \cdot\ 10\ +\ minerals\_rate\ \cdot\ 10\ +\ gas\_rate\ \cdot\ 
+r_i = minerals\ +\ gas\ \cdot\ 10\ +\ minerals\_rate\ \cdot\ 10\ +\ gas\_rate\ 
+\cdot\ 
 100
 \end{equation}
 
