@@ -21,6 +21,8 @@ numpy==1.14.0
 matplotlib==2.1.2
 ```
 
+**Important**: [pysc2 2.0](https://github.com/deepmind/pysc2/releases/tag/v2.0) introduced some breaking changes which this agent is not compatible with.
+
 In order to run the agent you need to have pysc2 installed and configured, as well as StarCraft 2 and the maps of the minigames. Check out the [pysc2 readme](https://github.com/deepmind/pysc2/blob/master/README.md) for more information.
 For performance reasons I highly recommend using TensorFlow with GPU support, check out the official TensorFlow page on [how to install it](https://www.tensorflow.org/install/install_linux). The CPU version of course works as well, but the performance is very poor. The agent was tested and optimised to run on a GPU with at least 4GB, it should work with less as well, but if you get a `ResourceExhaustedError` try increasing `NUM_BATCHES` from [a3c_agent.py](./a3c_agent.py).
 
